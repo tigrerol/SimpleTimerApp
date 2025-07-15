@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import SimpleTimerAppFeature
 
 @main
@@ -7,5 +8,6 @@ struct SimpleTimerAppApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: [WorkoutSession.self, ExerciseLog.self, SetLog.self])
     }
 }

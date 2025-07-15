@@ -4,25 +4,50 @@ import SwiftData
 public struct ContentView: View {
     @State private var timerEngine = TimerEngine()
     @State private var workoutConfig = WorkoutConfig()
+    @State private var exerciseDefaults = ExerciseDefaults()
+    @State private var selectedTab = 0
     
     public init() {}
     
     public var body: some View {
-        NavigationStack {
-            switch timerEngine.timerState.phase {
-            case .configuring:
-                WorkoutConfigurationView(
-                    config: workoutConfig,
-                    onStartWorkout: {
-                        timerEngine.configureWorkout(workoutConfig)
-                    }
-                )
-                
-            case .ready, .working, .resting, .paused, .completed:
-                WorkoutTimerView(timerEngine: timerEngine)
+        TabView(selection: $selectedTab) {
+            // Timer Tab
+            NavigationStack {
+                switch timerEngine.timerState.phase {
+                case .configuring:
+                    WorkoutConfigurationView(
+                        config: workoutConfig,
+                        onStartWorkout: {
+                            timerEngine.configureWorkout(workoutConfig)
+                        }
+                    )
+                    .environment(exerciseDefaults)
+                    
+                case .ready, .working, .resting, .paused, .completed:
+                    WorkoutTimerView(
+                        timerEngine: timerEngine,
+                        exerciseDefaults: exerciseDefaults
+                    )
+                }
             }
+            .navigationTitle("Timer")
+            .tabItem {
+                Image(systemName: "timer")
+                Text("Timer")
+            }
+            .tag(0)
+            
+            // History Tab
+            NavigationStack {
+                WorkoutHistoryView()
+            }
+            .navigationTitle("History")
+            .tabItem {
+                Image(systemName: "list.bullet")
+                Text("History")
+            }
+            .tag(1)
         }
-        .navigationTitle("Simple Timer")
     }
 }
 
@@ -31,6 +56,29 @@ public struct ContentView: View {
 struct WorkoutConfigurationView: View {
     @Bindable var config: WorkoutConfig
     let onStartWorkout: () -> Void
+    @Environment(ExerciseDefaults.self) private var exerciseDefaults
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \WorkoutSession.date, order: .reverse) private var workoutSessions: [WorkoutSession]
+    
+    private var recentExerciseNames: [String] {
+        var uniqueExercises: [String] = []
+        
+        for session in workoutSessions {
+            for exercise in session.exercises {
+                if !uniqueExercises.contains(exercise.name) {
+                    uniqueExercises.append(exercise.name)
+                    if uniqueExercises.count >= 5 {
+                        break
+                    }
+                }
+            }
+            if uniqueExercises.count >= 5 {
+                break
+            }
+        }
+        
+        return uniqueExercises
+    }
     
     var body: some View {
         VStack(spacing: 30) {
@@ -45,9 +93,25 @@ struct WorkoutConfigurationView: View {
                     Text("Exercise")
                         .font(.headline)
                     
-                    TextField("Enter exercise name", text: $config.exerciseName)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.title3)
+                    HStack {
+                        TextField("Enter exercise name", text: $config.exerciseName)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.title3)
+                        
+                        if !recentExerciseNames.isEmpty {
+                            Menu {
+                                ForEach(recentExerciseNames, id: \.self) { exercise in
+                                    Button(exercise) {
+                                        config.exerciseName = exercise
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "chevron.down.circle")
+                                    .font(.title2)
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                    }
                 }
                 
                 // Number of Sets
@@ -123,6 +187,8 @@ struct WorkoutConfigurationView: View {
 
 struct WorkoutTimerView: View {
     let timerEngine: TimerEngine
+    let exerciseDefaults: ExerciseDefaults
+    @Environment(\.modelContext) private var modelContext
     
     var body: some View {
         VStack(spacing: 40) {
@@ -161,14 +227,79 @@ struct WorkoutTimerView: View {
                 }
             )
             
-            // Control Buttons
-            ControlButtonsView(
-                phase: timerEngine.timerState.phase,
-                onPause: { timerEngine.pauseTimer() },
-                onResume: { timerEngine.resumeTimer() },
-                onSkip: { timerEngine.startCurrentSet() },
-                onReset: { timerEngine.resetTimer() }
-            )
+            // Control Buttons or Set Logging
+            switch timerEngine.timerState.phase {
+            case .resting(_, let nextSet, _):
+                // Show set logging directly during rest
+                SetLoggingCard(
+                    setNumber: nextSet - 1,
+                    exerciseName: timerEngine.timerState.currentConfig?.exerciseName ?? "",
+                    exerciseDefaults: exerciseDefaults,
+                    onSave: { setLog in
+                        timerEngine.timerState.addSetLog(setLog)
+                        exerciseDefaults.updateLastValues(
+                            for: timerEngine.timerState.currentConfig?.exerciseName ?? "",
+                            reps: setLog.reps,
+                            weightResistance: setLog.weightResistance
+                        )
+                    },
+                    onPause: { timerEngine.pauseTimer() },
+                    onSkip: { timerEngine.startCurrentSet() },
+                    onReset: { timerEngine.resetTimer() }
+                )
+                
+            case .paused(let nextSet, _):
+                VStack(spacing: 15) {
+                    // Set logging available when paused too
+                    SetLoggingCard(
+                        setNumber: nextSet - 1,
+                        exerciseName: timerEngine.timerState.currentConfig?.exerciseName ?? "",
+                        exerciseDefaults: exerciseDefaults,
+                        onSave: { setLog in
+                            timerEngine.timerState.addSetLog(setLog)
+                            exerciseDefaults.updateLastValues(
+                                for: timerEngine.timerState.currentConfig?.exerciseName ?? "",
+                                reps: setLog.reps,
+                                weightResistance: setLog.weightResistance
+                            )
+                        }
+                    )
+                    
+                    HStack(spacing: 15) {
+                        Button("Resume") {
+                            timerEngine.resumeTimer()
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Skip") {
+                            timerEngine.startCurrentSet()
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Reset") {
+                            timerEngine.resetTimer()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                
+            default:
+                ControlButtonsView(
+                    phase: timerEngine.timerState.phase,
+                    onPause: { timerEngine.pauseTimer() },
+                    onResume: { timerEngine.resumeTimer() },
+                    onSkip: { timerEngine.startCurrentSet() },
+                    onReset: { 
+                        if case .completed = timerEngine.timerState.phase {
+                            // Save completed workout
+                            if let session = timerEngine.timerState.completeWorkout() {
+                                modelContext.insert(session)
+                            }
+                        }
+                        timerEngine.resetTimer() 
+                    }
+                )
+            }
             
             Spacer()
         }
@@ -361,52 +492,577 @@ struct ControlButtonsView: View {
     
     var body: some View {
         switch phase {
-        case .resting(let timeRemaining, _, _):
-            if timeRemaining > 0 {
-                HStack(spacing: 15) {
-                    Button("Pause") {
-                        onPause()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    
-                    Button("Skip") {
-                        onSkip()
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    Button("Reset") {
-                        onReset()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            
-        case .paused:
-            HStack(spacing: 15) {
-                Button("Resume") {
-                    onResume()
-                }
-                .buttonStyle(.borderedProminent)
-                
-                Button("Skip") {
-                    onSkip()
-                }
-                .buttonStyle(.bordered)
-                
-                Button("Reset") {
-                    onReset()
-                }
-                .buttonStyle(.bordered)
-            }
-            
-        case .working, .completed:
+        case .working:
             Button("Reset") {
                 onReset()
             }
             .buttonStyle(.bordered)
             
+        case .completed:
+            Button("Finish") {
+                onReset()
+            }
+            .buttonStyle(.borderedProminent)
+            
         default:
             EmptyView()
+        }
+    }
+}
+
+// MARK: - Set Logging Card
+
+struct SetLoggingCard: View {
+    let setNumber: Int
+    let exerciseName: String
+    let exerciseDefaults: ExerciseDefaults
+    let onSave: (SetLog) -> Void
+    let onPause: (() -> Void)?
+    let onSkip: (() -> Void)?
+    let onReset: (() -> Void)?
+    
+    @State private var reps: String = ""
+    @State private var weightResistance: String = ""
+    @State private var notes: String = ""
+    @State private var showingQuickReps = false
+    @State private var showingQuickWeights = false
+    @State private var hasAutoSaved = false
+    
+    private let quickRepOptions = [5, 8, 10, 12, 15, 20]
+    private let quickWeightOptions = ["10kg", "15kg", "20kg", "25kg", "Level 1", "Level 2", "Level 3", "Level 4", "Level 5"]
+    
+    init(setNumber: Int, exerciseName: String, exerciseDefaults: ExerciseDefaults, onSave: @escaping (SetLog) -> Void, onPause: (() -> Void)? = nil, onSkip: (() -> Void)? = nil, onReset: (() -> Void)? = nil) {
+        self.setNumber = setNumber
+        self.exerciseName = exerciseName
+        self.exerciseDefaults = exerciseDefaults
+        self.onSave = onSave
+        self.onPause = onPause
+        self.onSkip = onSkip
+        self.onReset = onReset
+    }
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Set logging card
+            VStack(spacing: 15) {
+                Text("Log Set \(setNumber)")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                VStack(spacing: 12) {
+                    // Reps
+                    HStack {
+                        Text("Reps")
+                            .frame(width: 60, alignment: .leading)
+                        
+                        TextField("Optional", text: $reps)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.center)
+                        
+                        Button("Quick") {
+                            showingQuickReps = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .frame(width: 60)
+                    }
+                    
+                    // Weight/Resistance
+                    HStack {
+                        Text("Weight")
+                            .frame(width: 60, alignment: .leading)
+                        
+                        TextField("Optional", text: $weightResistance)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.center)
+                        
+                        Button("Quick") {
+                            showingQuickWeights = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .frame(width: 60)
+                    }
+                    
+                    // Notes
+                    HStack {
+                        Text("Notes")
+                            .frame(width: 60, alignment: .leading)
+                        
+                        TextField("Optional notes...", text: $notes)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.center)
+                        
+                        Spacer()
+                            .frame(width: 60)
+                    }
+                }
+                
+                // Save button
+                Button("Save Set") {
+                    saveSet()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(hasAutoSaved)
+            }
+            .padding()
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            
+            // Control buttons
+            HStack(spacing: 15) {
+                if let onPause = onPause {
+                    Button("Pause") {
+                        saveSetIfNeeded()
+                        onPause()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                
+                if let onSkip = onSkip {
+                    Button("Skip") {
+                        saveSetIfNeeded()
+                        onSkip()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                
+                if let onReset = onReset {
+                    Button("Reset") {
+                        saveSetIfNeeded()
+                        onReset()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .confirmationDialog("Quick Reps", isPresented: $showingQuickReps) {
+            ForEach(quickRepOptions, id: \.self) { rep in
+                Button("\(rep) reps") {
+                    reps = "\(rep)"
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+        .confirmationDialog("Quick Weight", isPresented: $showingQuickWeights) {
+            ForEach(quickWeightOptions, id: \.self) { weight in
+                Button(weight) {
+                    weightResistance = weight
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+        .onAppear {
+            // Pre-fill with last used values
+            let lastValues = exerciseDefaults.getLastValues(for: exerciseName)
+            if let lastReps = lastValues.reps {
+                reps = "\(lastReps)"
+            }
+            weightResistance = lastValues.weightResistance
+            hasAutoSaved = false
+        }
+    }
+    
+    private func saveSet() {
+        let setLog = SetLog(
+            setNumber: setNumber,
+            reps: Int(reps.trimmingCharacters(in: .whitespacesAndNewlines)),
+            weightResistance: weightResistance.trimmingCharacters(in: .whitespacesAndNewlines),
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        onSave(setLog)
+        hasAutoSaved = true
+    }
+    
+    private func saveSetIfNeeded() {
+        // Auto-save when transitioning if there's any data and hasn't been saved yet
+        if !hasAutoSaved && (!reps.isEmpty || !weightResistance.isEmpty || !notes.isEmpty) {
+            saveSet()
+        }
+    }
+}
+
+// MARK: - Set Logging View
+
+struct SetLoggingView: View {
+    let setNumber: Int
+    let exerciseName: String
+    let exerciseDefaults: ExerciseDefaults
+    let onSave: (SetLog) -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    @State private var reps: String = ""
+    @State private var weightResistance: String = ""
+    @State private var notes: String = ""
+    @State private var showingQuickReps = false
+    @State private var showingQuickWeights = false
+    
+    private let quickRepOptions = [5, 8, 10, 12, 15, 20]
+    private let quickWeightOptions = ["10kg", "15kg", "20kg", "25kg", "Level 1", "Level 2", "Level 3", "Level 4", "Level 5"]
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Set \(setNumber) - \(exerciseName)")) {
+                    // Reps
+                    HStack {
+                        Text("Reps")
+                        Spacer()
+                        TextField("Optional", text: $reps)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                        
+                        Button("Quick") {
+                            showingQuickReps = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
+                    // Weight/Resistance
+                    HStack {
+                        Text("Weight/Resistance")
+                        Spacer()
+                        TextField("Optional", text: $weightResistance)
+                            .multilineTextAlignment(.trailing)
+                        
+                        Button("Quick") {
+                            showingQuickWeights = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
+                    // Notes
+                    VStack(alignment: .leading) {
+                        Text("Notes")
+                        TextField("Optional notes...", text: $notes, axis: .vertical)
+                            .lineLimit(3...6)
+                    }
+                }
+            }
+            .navigationTitle("Log Set")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        let setLog = SetLog(
+                            setNumber: setNumber,
+                            reps: Int(reps.trimmingCharacters(in: .whitespacesAndNewlines)),
+                            weightResistance: weightResistance.trimmingCharacters(in: .whitespacesAndNewlines),
+                            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        )
+                        onSave(setLog)
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+            .confirmationDialog("Quick Reps", isPresented: $showingQuickReps) {
+                ForEach(quickRepOptions, id: \.self) { rep in
+                    Button("\(rep) reps") {
+                        reps = "\(rep)"
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+            .confirmationDialog("Quick Weight", isPresented: $showingQuickWeights) {
+                ForEach(quickWeightOptions, id: \.self) { weight in
+                    Button(weight) {
+                        weightResistance = weight
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+            .onAppear {
+                // Pre-fill with last used values
+                let lastValues = exerciseDefaults.getLastValues(for: exerciseName)
+                if let lastReps = lastValues.reps {
+                    reps = "\(lastReps)"
+                }
+                weightResistance = lastValues.weightResistance
+            }
+        }
+    }
+}
+
+// MARK: - Workout History View
+
+struct WorkoutHistoryView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \WorkoutSession.date, order: .reverse) private var workoutSessions: [WorkoutSession]
+    @State private var selectedSession: WorkoutSession?
+    @State private var showingDeleteConfirmation = false
+    @State private var sessionToDelete: WorkoutSession?
+    
+    var body: some View {
+        NavigationStack {
+            Group {
+                if workoutSessions.isEmpty {
+                    ContentUnavailableView(
+                        "No Workouts Yet",
+                        systemImage: "dumbbell",
+                        description: Text("Your workout history will appear here after completing your first workout.")
+                    )
+                } else {
+                    List {
+                        ForEach(workoutSessions) { session in
+                            WorkoutSessionRow(session: session)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    selectedSession = session
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button("Delete", role: .destructive) {
+                                        sessionToDelete = session
+                                        showingDeleteConfirmation = true
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Workout History")
+            .sheet(item: $selectedSession) { session in
+                WorkoutDetailView(session: session)
+            }
+            .confirmationDialog("Delete Workout", isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    if let session = sessionToDelete {
+                        modelContext.delete(session)
+                        sessionToDelete = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    sessionToDelete = nil
+                }
+            } message: {
+                Text("Are you sure you want to delete this workout? This action cannot be undone.")
+            }
+        }
+    }
+}
+
+// MARK: - Workout Session Row
+
+struct WorkoutSessionRow: View {
+    let session: WorkoutSession
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(formatDate(session.date))
+                    .font(.headline)
+                Spacer()
+                Text(formatDuration(session.duration))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            ForEach(session.exercises) { exercise in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(exercise.name)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    FlowLayout(spacing: 8) {
+                        ForEach(exercise.sets) { set in
+                            SetChip(set: set)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        return "\(minutes)m"
+    }
+}
+
+// MARK: - Set Chip
+
+struct SetChip: View {
+    let set: SetLog
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("\(set.setNumber):")
+                .font(.caption2)
+                .fontWeight(.semibold)
+            
+            if let reps = set.reps {
+                Text("\(reps)")
+                    .font(.caption2)
+            }
+            
+            if !set.weightResistance.isEmpty {
+                Text(set.weightResistance)
+                    .font(.caption2)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.quaternary)
+        .clipShape(Capsule())
+    }
+}
+
+// MARK: - Flow Layout
+
+struct FlowLayout: Layout {
+    let spacing: CGFloat
+    
+    init(spacing: CGFloat = 8) {
+        self.spacing = spacing
+    }
+    
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var height: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var currentX: CGFloat = 0
+        
+        for subview in subviews {
+            let subviewSize = subview.sizeThatFits(.unspecified)
+            
+            if currentX + subviewSize.width > width && currentX > 0 {
+                height += rowHeight + spacing
+                currentX = 0
+                rowHeight = 0
+            }
+            
+            currentX += subviewSize.width + spacing
+            rowHeight = max(rowHeight, subviewSize.height)
+        }
+        
+        height += rowHeight
+        return CGSize(width: width, height: height)
+    }
+    
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var currentX = bounds.minX
+        var currentY = bounds.minY
+        var rowHeight: CGFloat = 0
+        
+        for subview in subviews {
+            let subviewSize = subview.sizeThatFits(.unspecified)
+            
+            if currentX + subviewSize.width > bounds.maxX && currentX > bounds.minX {
+                currentY += rowHeight + spacing
+                currentX = bounds.minX
+                rowHeight = 0
+            }
+            
+            subview.place(at: CGPoint(x: currentX, y: currentY), proposal: .unspecified)
+            currentX += subviewSize.width + spacing
+            rowHeight = max(rowHeight, subviewSize.height)
+        }
+    }
+}
+
+// MARK: - Workout Detail View
+
+struct WorkoutDetailView: View {
+    let session: WorkoutSession
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Section(header: Text("Workout Info")) {
+                    HStack {
+                        Text("Date")
+                        Spacer()
+                        Text(formatDate(session.date))
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Duration")
+                        Spacer()
+                        Text(formatDuration(session.duration))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                ForEach(session.exercises) { exercise in
+                    Section(header: Text(exercise.name)) {
+                        ForEach(exercise.sets) { set in
+                            HStack {
+                                Text("Set \(set.setNumber)")
+                                    .fontWeight(.medium)
+                                
+                                Spacer()
+                                
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    if let reps = set.reps {
+                                        Text("\(reps) reps")
+                                            .font(.subheadline)
+                                    }
+                                    
+                                    if !set.weightResistance.isEmpty {
+                                        Text(set.weightResistance)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    if !set.notes.isEmpty {
+                                        Text(set.notes)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.trailing)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Workout Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = Int(duration) % 3600 / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
         }
     }
 }

@@ -25,25 +25,65 @@ public final class WorkoutSession {
 @Model
 public final class ExerciseLog {
     public var name: String
-    public var weight: Double?
+    public var sets: [SetLog]
+    public var timestamp: Date
+    
+    public init(name: String) {
+        self.name = name
+        self.sets = []
+        self.timestamp = Date()
+    }
+    
+    public func addSet(_ set: SetLog) {
+        sets.append(set)
+    }
+}
+
+@Model
+public final class SetLog {
+    public var setNumber: Int
     public var reps: Int?
-    public var restTime: TimeInterval
+    public var weightResistance: String
     public var notes: String
     public var timestamp: Date
     
     public init(
-        name: String,
-        weight: Double? = nil,
+        setNumber: Int,
         reps: Int? = nil,
-        restTime: TimeInterval = 0,
+        weightResistance: String = "",
         notes: String = ""
     ) {
-        self.name = name
-        self.weight = weight
+        self.setNumber = setNumber
         self.reps = reps
-        self.restTime = restTime
+        self.weightResistance = weightResistance
         self.notes = notes
         self.timestamp = Date()
+    }
+}
+
+// Exercise defaults for quick entry
+@Observable
+public final class ExerciseDefaults {
+    public var lastValues: [String: LastSetData] = [:]
+    
+    public init() {}
+    
+    public func getLastValues(for exercise: String) -> LastSetData {
+        return lastValues[exercise] ?? LastSetData()
+    }
+    
+    public func updateLastValues(for exercise: String, reps: Int?, weightResistance: String) {
+        lastValues[exercise] = LastSetData(reps: reps, weightResistance: weightResistance)
+    }
+}
+
+public struct LastSetData {
+    public var reps: Int?
+    public var weightResistance: String
+    
+    public init(reps: Int? = nil, weightResistance: String = "") {
+        self.reps = reps
+        self.weightResistance = weightResistance
     }
 }
 
@@ -83,17 +123,26 @@ public final class TimerState {
     
     public var phase: Phase = .configuring
     public var currentConfig: WorkoutConfig?
+    public var currentWorkoutSession: WorkoutSession?
+    public var currentExerciseLog: ExerciseLog?
     public var isScreenLocked: Bool = false
     
     public init() {}
     
     public func configureWorkout(_ config: WorkoutConfig) {
         currentConfig = config
+        
+        // Create workout session and exercise log immediately when configuring
+        currentWorkoutSession = WorkoutSession()
+        currentExerciseLog = ExerciseLog(name: config.exerciseName)
+        
         phase = .ready(config: config)
     }
     
     public func startWorkout() {
         guard let config = currentConfig else { return }
+        
+        // Session and exercise log are already created in configureWorkout
         phase = .working(currentSet: 1, totalSets: config.totalSets)
     }
     
@@ -153,5 +202,23 @@ public final class TimerState {
     public func reset() {
         phase = .configuring
         currentConfig = nil
+        currentWorkoutSession = nil
+        currentExerciseLog = nil
+    }
+    
+    public func completeWorkout() -> WorkoutSession? {
+        guard let session = currentWorkoutSession,
+              let exerciseLog = currentExerciseLog else { return nil }
+        
+        session.endSession()
+        session.addExercise(exerciseLog)
+        
+        let completedSession = session
+        reset()
+        return completedSession
+    }
+    
+    public func addSetLog(_ setLog: SetLog) {
+        currentExerciseLog?.addSet(setLog)
     }
 }
