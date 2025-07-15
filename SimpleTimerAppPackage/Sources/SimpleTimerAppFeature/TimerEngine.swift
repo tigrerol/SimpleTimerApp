@@ -95,8 +95,8 @@ public final class TimerEngine {
         isRunning = true
         
         timerTask = Task {
-            while !Task.isCancelled && Date() < endDate {
-                let remaining = max(0, endDate.timeIntervalSinceNow)
+            while !Task.isCancelled {
+                let remaining = endDate.timeIntervalSinceNow
                 
                 if remaining <= 0 {
                     restTimerCompleted()
@@ -131,6 +131,7 @@ public final class TimerEngine {
     }
     
     private func restTimerCompleted() {
+        print("🔔 Rest timer completed - playing sound and transitioning")
         stopTimer()
         
         // Play sound and haptic feedback immediately
@@ -142,14 +143,18 @@ public final class TimerEngine {
         // Automatically transition to next working set
         switch timerState.phase {
         case .resting(_, let nextSet, let totalSets):
+            print("🔔 Transitioning from set \(nextSet-1) to set \(nextSet) of \(totalSets)")
             if nextSet <= totalSets {
                 // Start the next working set automatically
                 timerState.startSet(nextSet)
+                print("🔔 Started working set \(nextSet)")
             } else {
                 // This shouldn't happen as endSet() should handle completion
                 timerState.phase = .completed
+                print("🔔 Workout completed")
             }
         default:
+            print("🔔 Warning: restTimerCompleted called in unexpected phase: \(timerState.phase)")
             break
         }
     }
@@ -192,6 +197,7 @@ final class AudioManager {
     }
     
     func playCompletionSound() {
+        print("🔊 Playing completion sound")
         // Simple system sound for completion
         AudioServicesPlaySystemSound(1057) // Tink sound
     }
@@ -219,12 +225,16 @@ final class HapticManager {
     }
     
     func triggerCompletion() async {
+        print("📳 Triggering haptic feedback")
         guard let engine = hapticEngine else {
+            print("📳 Using fallback haptic feedback")
             // Fallback to simple haptic feedback
             let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
             impactFeedback.impactOccurred()
             return
         }
+        
+        print("📳 Using CoreHaptics engine")
         
         do {
             // Create a strong tap pattern for rest completion
