@@ -17,6 +17,7 @@ public struct ContentView: View {
                 case .configuring:
                     WorkoutConfigurationView(
                         config: workoutConfig,
+                        timerEngine: timerEngine,
                         onStartWorkout: {
                             timerEngine.configureWorkout(workoutConfig)
                         }
@@ -60,6 +61,7 @@ public struct ContentView: View {
 
 struct WorkoutConfigurationView: View {
     @Bindable var config: WorkoutConfig
+    let timerEngine: TimerEngine
     let onStartWorkout: () -> Void
     @Environment(ExerciseDefaults.self) private var exerciseDefaults
     @Environment(\.modelContext) private var modelContext
@@ -96,28 +98,57 @@ struct WorkoutConfigurationView: View {
                         startPoint: .leading,
                         endPoint: .trailing
                     ))
+                    .onAppear {
+                        // Connect the sound manager when configuration view appears
+                        timerEngine.setSoundManager(themeManager.soundManager)
+                    }
                 
                 Spacer()
                 
-                // Theme toggle
-                Menu {
-                    ForEach(ThemeManager.ColorScheme.allCases, id: \.self) { scheme in
-                        Button {
-                            themeManager.selectedScheme = scheme
-                        } label: {
-                            HStack {
-                                Text(scheme.rawValue)
-                                if themeManager.selectedScheme == scheme {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
+                HStack(spacing: 15) {
+                    // Sound selection
+                    Menu {
+                        ForEach(SoundManager.CompletionSound.allCases, id: \.self) { sound in
+                            Button {
+                                themeManager.soundManager.selectedSound = sound
+                                themeManager.soundManager.previewSound(sound)
+                            } label: {
+                                HStack {
+                                    Image(systemName: sound.icon)
+                                    Text(sound.description)
+                                    if themeManager.soundManager.selectedSound == sound {
+                                        Spacer()
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }
+                    } label: {
+                        Image(systemName: soundIcon)
+                            .font(.title2)
+                            .foregroundStyle(Color("TimerOrange"))
                     }
-                } label: {
-                    Image(systemName: themeIcon)
-                        .font(.title2)
-                        .foregroundStyle(Color("TimerPurple"))
+                    
+                    // Theme toggle
+                    Menu {
+                        ForEach(ThemeManager.ColorScheme.allCases, id: \.self) { scheme in
+                            Button {
+                                themeManager.selectedScheme = scheme
+                            } label: {
+                                HStack {
+                                    Text(scheme.rawValue)
+                                    if themeManager.selectedScheme == scheme {
+                                        Spacer()
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: themeIcon)
+                            .font(.title2)
+                            .foregroundStyle(Color("TimerPurple"))
+                    }
                 }
             }
             
@@ -245,6 +276,10 @@ struct WorkoutConfigurationView: View {
         case .dark:
             return "moon"
         }
+    }
+    
+    private var soundIcon: String {
+        return themeManager.soundManager.selectedSound.icon
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {

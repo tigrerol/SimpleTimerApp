@@ -3,6 +3,7 @@ import SwiftUI
 @Observable
 @MainActor
 public final class ThemeManager {
+    public let soundManager = SoundManager()
     public enum ColorScheme: String, CaseIterable {
         case system = "System"
         case light = "Light"

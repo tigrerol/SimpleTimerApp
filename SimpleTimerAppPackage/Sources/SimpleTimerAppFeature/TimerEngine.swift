@@ -14,10 +14,15 @@ public final class TimerEngine {
     private var targetEndDate: Date?
     private let audioManager = AudioManager()
     private let hapticManager = HapticManager()
+    private var soundManager: SoundManager?
     
     public init() {
         setupAudioSession()
         setupHaptics()
+    }
+    
+    public func setSoundManager(_ soundManager: SoundManager) {
+        self.soundManager = soundManager
     }
     
     // MARK: - Public Interface
@@ -135,7 +140,11 @@ public final class TimerEngine {
         stopTimer()
         
         // Play sound and haptic feedback immediately
-        audioManager.playCompletionSound()
+        if let soundManager = soundManager {
+            soundManager.playCompletionSound()
+        } else {
+            audioManager.playCompletionSound()
+        }
         Task {
             await hapticManager.triggerCompletion()
         }
