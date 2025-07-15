@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AudioToolbox
 import CoreHaptics
 import UIKit
 
@@ -132,19 +133,24 @@ public final class TimerEngine {
     private func restTimerCompleted() {
         stopTimer()
         
-        // Keep the timer in resting state but with 0 time remaining
-        // The UI will show "Start" button for next set
-        switch timerState.phase {
-        case .resting(_, let nextSet, let totalSets):
-            timerState.phase = .resting(timeRemaining: 0, nextSet: nextSet, totalSets: totalSets)
-        default:
-            break
+        // Play sound and haptic feedback immediately
+        audioManager.playCompletionSound()
+        Task {
+            await hapticManager.triggerCompletion()
         }
         
-        // Play sound and haptic feedback
-        Task {
-            await audioManager.playCompletionSound()
-            await hapticManager.triggerCompletion()
+        // Automatically transition to next working set
+        switch timerState.phase {
+        case .resting(_, let nextSet, let totalSets):
+            if nextSet <= totalSets {
+                // Start the next working set automatically
+                timerState.startSet(nextSet)
+            } else {
+                // This shouldn't happen as endSet() should handle completion
+                timerState.phase = .completed
+            }
+        default:
+            break
         }
     }
     
@@ -185,7 +191,7 @@ final class AudioManager {
         }
     }
     
-    func playCompletionSound() async {
+    func playCompletionSound() {
         // Simple system sound for completion
         AudioServicesPlaySystemSound(1057) // Tink sound
     }
