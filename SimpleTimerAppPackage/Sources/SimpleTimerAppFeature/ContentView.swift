@@ -199,7 +199,21 @@ struct WorkoutConfigurationView: View {
                             endPoint: .trailing
                         ))
                     
-                    Slider(value: $config.restDuration, in: 15...300, step: 15)
+                    Slider(value: Binding(
+                        get: { 
+                            // Ensure rest duration is always valid
+                            guard config.restDuration.isFinite && config.restDuration >= 15 else {
+                                return 60 // Default to 60 seconds
+                            }
+                            return config.restDuration
+                        },
+                        set: { newValue in
+                            // Validate new value before setting
+                            if newValue.isFinite && newValue >= 15 && newValue <= 300 {
+                                config.restDuration = newValue
+                            }
+                        }
+                    ), in: 15...300, step: 15)
                         .tint(Color("TimerCyan"))
                 }
             }
@@ -234,6 +248,11 @@ struct WorkoutConfigurationView: View {
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
+        // Validate input to prevent NaN or invalid values
+        guard duration.isFinite && duration >= 0 else {
+            return "0s"
+        }
+        
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         
@@ -510,6 +529,11 @@ struct TimerDisplayView: View {
     }
     
     private func formatTime(_ timeInterval: TimeInterval) -> String {
+        // Validate input to prevent NaN or invalid values
+        guard timeInterval.isFinite && timeInterval >= 0 else {
+            return "0:00"
+        }
+        
         let minutes = Int(timeInterval) / 60
         let seconds = Int(timeInterval) % 60
         return String(format: "%d:%02d", minutes, seconds)
@@ -1012,6 +1036,9 @@ struct WorkoutSessionRow: View {
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
+        guard duration.isFinite && duration >= 0 else {
+            return "0m"
+        }
         let minutes = Int(duration) / 60
         return "\(minutes)m"
     }
@@ -1055,13 +1082,24 @@ struct FlowLayout: Layout {
     }
     
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
+        let width = proposal.width ?? 300 // Use a reasonable default instead of infinity
         var height: CGFloat = 0
         var rowHeight: CGFloat = 0
         var currentX: CGFloat = 0
         
+        // Validate width is not NaN or invalid
+        guard width.isFinite && width > 0 else {
+            return CGSize(width: 300, height: 44) // Return safe default size
+        }
+        
         for subview in subviews {
             let subviewSize = subview.sizeThatFits(.unspecified)
+            
+            // Validate subview size
+            guard subviewSize.width.isFinite && subviewSize.height.isFinite &&
+                  subviewSize.width >= 0 && subviewSize.height >= 0 else {
+                continue // Skip invalid subviews
+            }
             
             if currentX + subviewSize.width > width && currentX > 0 {
                 height += rowHeight + spacing
@@ -1074,10 +1112,23 @@ struct FlowLayout: Layout {
         }
         
         height += rowHeight
+        
+        // Validate final size
+        guard height.isFinite && height >= 0 else {
+            return CGSize(width: width, height: 44) // Return safe default height
+        }
+        
         return CGSize(width: width, height: height)
     }
     
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        // Validate bounds
+        guard bounds.width.isFinite && bounds.height.isFinite &&
+              bounds.minX.isFinite && bounds.minY.isFinite &&
+              bounds.maxX.isFinite && bounds.maxY.isFinite else {
+            return // Don't place subviews if bounds are invalid
+        }
+        
         var currentX = bounds.minX
         var currentY = bounds.minY
         var rowHeight: CGFloat = 0
@@ -1085,13 +1136,26 @@ struct FlowLayout: Layout {
         for subview in subviews {
             let subviewSize = subview.sizeThatFits(.unspecified)
             
+            // Validate subview size
+            guard subviewSize.width.isFinite && subviewSize.height.isFinite &&
+                  subviewSize.width >= 0 && subviewSize.height >= 0 else {
+                continue // Skip invalid subviews
+            }
+            
             if currentX + subviewSize.width > bounds.maxX && currentX > bounds.minX {
                 currentY += rowHeight + spacing
                 currentX = bounds.minX
                 rowHeight = 0
             }
             
-            subview.place(at: CGPoint(x: currentX, y: currentY), proposal: .unspecified)
+            let placement = CGPoint(x: currentX, y: currentY)
+            
+            // Validate placement point
+            guard placement.x.isFinite && placement.y.isFinite else {
+                continue // Skip if placement would be invalid
+            }
+            
+            subview.place(at: placement, proposal: .unspecified)
             currentX += subviewSize.width + spacing
             rowHeight = max(rowHeight, subviewSize.height)
         }
@@ -1176,6 +1240,10 @@ struct WorkoutDetailView: View {
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
+        guard duration.isFinite && duration >= 0 else {
+            return "0m"
+        }
+        
         let hours = Int(duration) / 3600
         let minutes = Int(duration) % 3600 / 60
         

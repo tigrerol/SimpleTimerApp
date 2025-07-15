@@ -34,7 +34,7 @@ public final class TimerEngine {
         switch timerState.phase {
         case .ready:
             timerState.startWorkout()
-        case .resting(_, let nextSet, let totalSets):
+        case .resting(_, let nextSet, _):
             timerState.startSet(nextSet)
         default:
             break
@@ -95,10 +95,16 @@ public final class TimerEngine {
         
         timerTask = Task {
             while !Task.isCancelled && Date() < endDate {
-                let remaining = endDate.timeIntervalSinceNow
+                let remaining = max(0, endDate.timeIntervalSinceNow)
                 
                 if remaining <= 0 {
-                    await restTimerCompleted()
+                    restTimerCompleted()
+                    return
+                }
+                
+                // Validate remaining time is not NaN or invalid
+                guard remaining.isFinite && remaining >= 0 else {
+                    restTimerCompleted()
                     return
                 }
                 
