@@ -33,7 +33,9 @@ public struct ContentView: View {
             .navigationTitle("Timer")
             .tabItem {
                 Image(systemName: "timer")
+                    .foregroundStyle(selectedTab == 0 ? Color("TimerCyan") : .secondary)
                 Text("Timer")
+                    .font(.system(.caption, design: .rounded, weight: .medium))
             }
             .tag(0)
             
@@ -44,10 +46,13 @@ public struct ContentView: View {
             .navigationTitle("History")
             .tabItem {
                 Image(systemName: "list.bullet")
+                    .foregroundStyle(selectedTab == 1 ? Color("TimerCyan") : .secondary)
                 Text("History")
+                    .font(.system(.caption, design: .rounded, weight: .medium))
             }
             .tag(1)
         }
+        .tint(Color("TimerCyan"))
     }
 }
 
@@ -58,6 +63,7 @@ struct WorkoutConfigurationView: View {
     let onStartWorkout: () -> Void
     @Environment(ExerciseDefaults.self) private var exerciseDefaults
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     @Query(sort: \WorkoutSession.date, order: .reverse) private var workoutSessions: [WorkoutSession]
     
     private var recentExerciseNames: [String] {
@@ -82,21 +88,50 @@ struct WorkoutConfigurationView: View {
     
     var body: some View {
         VStack(spacing: 30) {
-            Text("Configure Workout")
-                .font(.largeTitle)
-                .fontWeight(.thin)
-                .foregroundStyle(.primary)
+            HStack {
+                Text("Configure Workout")
+                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.linearGradient(
+                        colors: [Color("TimerCyan"), Color("TimerPurple")],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
+                
+                Spacer()
+                
+                // Theme toggle
+                Menu {
+                    ForEach(ThemeManager.ColorScheme.allCases, id: \.self) { scheme in
+                        Button {
+                            themeManager.selectedScheme = scheme
+                        } label: {
+                            HStack {
+                                Text(scheme.rawValue)
+                                if themeManager.selectedScheme == scheme {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: themeIcon)
+                        .font(.title2)
+                        .foregroundStyle(Color("TimerPurple"))
+                }
+            }
             
             VStack(spacing: 20) {
                 // Exercise Name
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Exercise")
-                        .font(.headline)
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color("TimerPurple"))
                     
                     HStack {
                         TextField("Enter exercise name", text: $config.exerciseName)
                             .textFieldStyle(.roundedBorder)
-                            .font(.title3)
+                            .font(.system(size: 18, weight: .medium, design: .rounded))
                         
                         if !recentExerciseNames.isEmpty {
                             Menu {
@@ -108,7 +143,7 @@ struct WorkoutConfigurationView: View {
                             } label: {
                                 Image(systemName: "chevron.down.circle")
                                     .font(.title2)
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(Color("TimerCyan"))
                             }
                         }
                     }
@@ -117,7 +152,8 @@ struct WorkoutConfigurationView: View {
                 // Number of Sets
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Number of Sets")
-                        .font(.headline)
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color("TimerPurple"))
                     
                     HStack {
                         Button("-") {
@@ -126,11 +162,16 @@ struct WorkoutConfigurationView: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                        .tint(Color("TimerPurple"))
                         .disabled(config.totalSets <= 1)
                         
                         Text("\(config.totalSets)")
-                            .font(.title2)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 24, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.linearGradient(
+                                colors: [Color("TimerCyan"), Color("TimerPurple")],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ))
                             .frame(minWidth: 50)
                         
                         Button("+") {
@@ -139,17 +180,27 @@ struct WorkoutConfigurationView: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                        .tint(Color("TimerPurple"))
                         .disabled(config.totalSets >= 20)
                     }
                 }
                 
                 // Rest Time
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Rest Time: \(formatDuration(config.restDuration))")
-                        .font(.headline)
+                    Text("Rest Time")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color("TimerPurple"))
+                    
+                    Text(formatDuration(config.restDuration))
+                        .font(.system(size: 20, weight: .medium, design: .rounded))
+                        .foregroundStyle(.linearGradient(
+                            colors: [Color("TimerOrange"), Color("TimerPink")],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
                     
                     Slider(value: $config.restDuration, in: 15...300, step: 15)
-                        .accentColor(.blue)
+                        .tint(Color("TimerCyan"))
                 }
             }
             .padding(.horizontal)
@@ -162,13 +213,24 @@ struct WorkoutConfigurationView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .font(.title2)
-            .fontWeight(.semibold)
+            .font(.system(size: 20, weight: .semibold, design: .rounded))
+            .tint(Color("TimerCyan"))
             .frame(maxWidth: .infinity)
             .frame(height: 60)
             .disabled(!config.isValid)
         }
         .padding()
+    }
+    
+    private var themeIcon: String {
+        switch themeManager.selectedScheme {
+        case .system:
+            return "circle.lefthalf.filled"
+        case .light:
+            return "sun.max"
+        case .dark:
+            return "moon"
+        }
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -196,8 +258,12 @@ struct WorkoutTimerView: View {
             VStack(spacing: 10) {
                 if let config = timerEngine.timerState.currentConfig {
                     Text(config.exerciseName)
-                        .font(.title2)
-                        .fontWeight(.medium)
+                        .font(.system(size: 24, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.linearGradient(
+                            colors: [Color("TimerCyan"), Color("TimerPurple")],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
                         .multilineTextAlignment(.center)
                 }
                 
@@ -270,16 +336,19 @@ struct WorkoutTimerView: View {
                             timerEngine.resumeTimer()
                         }
                         .buttonStyle(.bordered)
+                        .tint(Color("TimerCyan"))
                         
                         Button("Skip") {
                             timerEngine.startCurrentSet()
                         }
                         .buttonStyle(.bordered)
+                        .tint(Color("TimerOrange"))
                         
                         Button("Reset") {
                             timerEngine.resetTimer()
                         }
                         .buttonStyle(.bordered)
+                        .tint(Color("TimerPurple"))
                     }
                 }
                 
@@ -319,32 +388,36 @@ struct SetProgressView: View {
         switch phase {
         case .ready(let config):
             Text("Ready • \(config.totalSets) sets")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 16, weight: .medium, design: .rounded))
+                .foregroundStyle(Color("TimerPurple"))
             
         case .working(let currentSet, let totalSets):
             Text("Set \(currentSet) of \(totalSets)")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.green)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .foregroundStyle(.linearGradient(
+                    colors: [Color("TimerOrange"), Color("TimerPink")],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ))
             
         case .resting(_, let nextSet, let totalSets):
             Text("Set \(nextSet) of \(totalSets)")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.orange)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color("TimerOrange"))
             
         case .paused(let nextSet, let totalSets):
             Text("Set \(nextSet) of \(totalSets)")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.yellow)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color("TimerPink"))
             
         case .completed:
             Text("Workout Complete!")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.blue)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .foregroundStyle(.linearGradient(
+                    colors: [Color("TimerCyan"), Color("TimerPurple")],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ))
             
         default:
             EmptyView()
@@ -362,50 +435,57 @@ struct TimerDisplayView: View {
             switch phase {
             case .ready:
                 Text("Ready to Start")
-                    .font(.largeTitle)
-                    .fontWeight(.thin)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 36, weight: .light, design: .rounded))
+                    .foregroundStyle(.linearGradient(
+                        colors: [Color("TimerCyan"), Color("TimerPurple")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
                 
             case .working:
                 VStack {
                     Text("Working")
-                        .font(.title)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.green)
+                        .font(.system(size: 32, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.linearGradient(
+                            colors: [Color("TimerOrange"), Color("TimerPink")],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
                     
                     Text("Tap when done")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color("TimerPurple"))
                 }
                 
             case .resting(let timeRemaining, _, _):
                 VStack {
                     if timeRemaining > 0 {
                         Text("Rest")
-                            .font(.title)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.orange)
+                            .font(.system(size: 32, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color("TimerOrange"))
                         
                         Text(formatTime(timeRemaining))
-                            .font(.system(size: 60, weight: .thin, design: .monospaced))
-                            .foregroundStyle(.primary)
+                            .font(.system(size: 60, weight: .thin, design: .rounded))
+                            .foregroundStyle(.linearGradient(
+                                colors: [Color("TimerCyan"), Color("TimerPurple")],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ))
                     } else {
                         Text("Rest Complete")
-                            .font(.title)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.blue)
+                            .font(.system(size: 32, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color("TimerCyan"))
                         
                         Text("Ready for next set")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color("TimerPurple"))
                     }
                 }
                 
             case .paused:
                 Text("Paused")
-                    .font(.title)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.yellow)
+                    .font(.system(size: 32, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color("TimerPink"))
                 
             case .completed:
                 VStack {
@@ -413,9 +493,12 @@ struct TimerDisplayView: View {
                         .font(.system(size: 60))
                     
                     Text("Workout Complete!")
-                        .font(.title)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.blue)
+                        .font(.system(size: 32, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.linearGradient(
+                            colors: [Color("TimerCyan"), Color("TimerPurple"), Color("TimerOrange"), Color("TimerPink")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
                 }
                 
             default:
@@ -442,12 +525,12 @@ struct MainActionButton: View {
     var body: some View {
         Button(action: onAction) {
             Text(buttonTitle)
-                .font(.title2)
-                .fontWeight(.semibold)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .frame(maxWidth: .infinity)
                 .frame(height: 80)
         }
         .buttonStyle(.borderedProminent)
+        .tint(buttonColor)
         .controlSize(.large)
         .disabled(buttonDisabled)
     }
@@ -479,6 +562,23 @@ struct MainActionButton: View {
             return false
         }
     }
+    
+    private var buttonColor: Color {
+        switch phase {
+        case .ready:
+            return Color("TimerCyan")
+        case .working:
+            return Color("TimerOrange")
+        case .resting(let timeRemaining, _, _):
+            return timeRemaining > 0 ? Color("TimerPurple") : Color("TimerCyan")
+        case .paused:
+            return Color("TimerPink")
+        case .completed:
+            return Color("TimerCyan")
+        default:
+            return Color("TimerCyan")
+        }
+    }
 }
 
 // MARK: - Control Buttons
@@ -497,12 +597,16 @@ struct ControlButtonsView: View {
                 onReset()
             }
             .buttonStyle(.bordered)
+            .tint(Color("TimerPink"))
+            .font(.system(size: 16, weight: .medium, design: .rounded))
             
         case .completed:
             Button("Finish") {
                 onReset()
             }
             .buttonStyle(.borderedProminent)
+            .tint(Color("TimerCyan"))
+            .font(.system(size: 18, weight: .semibold, design: .rounded))
             
         default:
             EmptyView()
@@ -546,8 +650,12 @@ struct SetLoggingCard: View {
             // Set logging card
             VStack(spacing: 15) {
                 Text("Log Set \(setNumber)")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.linearGradient(
+                        colors: [Color("TimerCyan"), Color("TimerPurple")],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
                 
                 VStack(spacing: 12) {
                     // Reps
@@ -564,6 +672,7 @@ struct SetLoggingCard: View {
                             showingQuickReps = true
                         }
                         .buttonStyle(.bordered)
+                        .tint(Color("TimerOrange"))
                         .controlSize(.small)
                         .frame(width: 60)
                     }
@@ -581,6 +690,7 @@ struct SetLoggingCard: View {
                             showingQuickWeights = true
                         }
                         .buttonStyle(.bordered)
+                        .tint(Color("TimerOrange"))
                         .controlSize(.small)
                         .frame(width: 60)
                     }
@@ -604,6 +714,8 @@ struct SetLoggingCard: View {
                     saveSet()
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(Color("TimerCyan"))
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
                 .controlSize(.large)
                 .disabled(hasAutoSaved)
             }
@@ -619,6 +731,7 @@ struct SetLoggingCard: View {
                         onPause()
                     }
                     .buttonStyle(.bordered)
+                    .tint(Color("TimerPink"))
                 }
                 
                 if let onSkip = onSkip {
@@ -627,6 +740,7 @@ struct SetLoggingCard: View {
                         onSkip()
                     }
                     .buttonStyle(.bordered)
+                    .tint(Color("TimerOrange"))
                 }
                 
                 if let onReset = onReset {
@@ -635,6 +749,7 @@ struct SetLoggingCard: View {
                         onReset()
                     }
                     .buttonStyle(.bordered)
+                    .tint(Color("TimerPurple"))
                 }
             }
         }
@@ -860,7 +975,12 @@ struct WorkoutSessionRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(formatDate(session.date))
-                    .font(.headline)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.linearGradient(
+                        colors: [Color("TimerCyan"), Color("TimerPurple")],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
                 Spacer()
                 Text(formatDuration(session.duration))
                     .font(.caption)
@@ -870,8 +990,8 @@ struct WorkoutSessionRow: View {
             ForEach(session.exercises) { exercise in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(exercise.name)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color("TimerPurple"))
                     
                     FlowLayout(spacing: 8) {
                         ForEach(exercise.sets) { set in
